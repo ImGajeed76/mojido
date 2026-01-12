@@ -1,0 +1,45 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+
+  "app_name": "Mojido",
+  "theme_toggle": "Toggle theme",
+  "app_tagline": "文字道 - The Way of Characters",
+
+  "start_title": "Welcome to Mojido",
+  "start_description": "Practice reading Japanese by typing romaji",
+  "start_button_primary": "Start Practice",
+  "start_stats_lastSession": "Last session",
+  "start_stats_accuracy": "{accuracy}% accuracy",
+  "start_stats_streak": "{streak} max streak",
+
+  "practice_streak_label": "Streak",
+  "practice_hint_show": "Show reading",
+  "practice_hint_hide": "Hide reading",
+  "hint_show_reading": "Show reading for {kanji}",
+  "practice_next_sentence": "Next",
+  "practice_pause": "Pause",
+  "practice_resume": "Resume",
+  "practice_quit": "Quit",
+  "practice_tap_to_type": "Tap here to type",
+  "practice_stats_correct": "{correct}/{total} correct",
+  "practice_stats_best_streak": "Best streak: {streak}",
+
+  "feedback_correct": "Correct!",
+  "feedback_incorrect": "Try again",
+  "feedback_streak_milestone": "Great streak!",
+
+  "session_complete_title": "Session Complete",
+  "session_complete_accuracy": "Accuracy: {accuracy}%",
+  "session_complete_chars": "Characters: {correct}/{total}",
+  "session_complete_streak": "Best streak: {streak}",
+  "session_complete_continue": "Continue",
+  "session_complete_quit": "Done",
+
+  "common_loading": "Loading...",
+  "common_error": "Something went wrong",
+  "common_retry": "Try again",
+
+  "streak_day_label": "day streak",
+  "streak_day_celebration": "{count} day streak!",
+  "streak_keep_going": "Keep it up!"
+}
