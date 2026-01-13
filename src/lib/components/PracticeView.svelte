@@ -5,6 +5,7 @@
   import TypingDisplay from "./TypingDisplay.svelte";
   import StreakCounter from "./StreakCounter.svelte";
   import StreakCelebration from "./StreakCelebration.svelte";
+  import ModeToggle from "./ModeToggle.svelte";
   import {type Sentence, selectSentence} from "$lib/data/sentences";
   import {tokenize, matchRomaji, isPunctuation, type Token} from "$lib/utils/romaji";
   import {
@@ -13,12 +14,15 @@
     endSession,
   } from "$lib/stores/session.svelte";
   import {recordSentenceCompleted, getDayStreak} from "$lib/db";
+  import {getIsMobile} from "$lib/stores/platform.svelte";
 
   interface Props {
     onQuit: () => void;
   }
 
   let {onQuit}: Props = $props();
+
+  const isMobile = $derived(getIsMobile());
 
   const session = getSessionState();
 
@@ -48,6 +52,7 @@
   let celebrationStreak = $state(0);
 
   let containerElement: HTMLDivElement | null = $state(null);
+  let hiddenInputElement: HTMLInputElement | null = $state(null);
 
   // Initialize with first sentence
   $effect(() => {
@@ -56,12 +61,78 @@
     }
   });
 
-  // Focus container on mount
+  // Focus container on mount (or hidden input on mobile)
   $effect(() => {
-    if (containerElement) {
+    if (isMobile && hiddenInputElement) {
+      hiddenInputElement.focus();
+    } else if (containerElement) {
       containerElement.focus();
     }
   });
+
+  function focusInput() {
+    if (isMobile && hiddenInputElement) {
+      hiddenInputElement.focus();
+    } else if (containerElement) {
+      containerElement.focus();
+    }
+  }
+
+  // Handle mobile text input
+  function handleMobileInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const value = input.value;
+
+    if (value.length === 0) {
+      // Backspace was pressed
+      if (inputBuffer.length > 0) {
+        inputBuffer = inputBuffer.slice(0, -1);
+        hasError = false;
+      }
+      return;
+    }
+
+    // Get the last typed character
+    const typed = value.slice(-1).toLowerCase();
+    input.value = ""; // Clear input immediately
+
+    // Block input if there's an error
+    if (hasError) return;
+
+    const newInput = inputBuffer + typed;
+
+    // Get current kana tokens
+    const kanaTokens = getCurrentKanaTokens();
+    if (kanaTokens.length === 0) return;
+
+    // Validate using matchRomaji
+    const result = matchRomaji(kanaTokens, currentKanaIndex, newInput);
+
+    if (result.matched) {
+      inputBuffer = newInput;
+      const token = currentSentence!.tokens[currentTokenIndex];
+      recordAttempt(token.reading, true);
+      advanceToNext(newInput);
+    } else if (result.partial) {
+      inputBuffer = newInput;
+    } else {
+      inputBuffer = newInput;
+      hasError = true;
+      currentTokenHadError = true;
+      const token = currentSentence!.tokens[currentTokenIndex];
+      recordAttempt(token.reading, false);
+    }
+  }
+
+  function handleMobileKeyDown(e: KeyboardEvent) {
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      if (inputBuffer.length > 0) {
+        inputBuffer = inputBuffer.slice(0, -1);
+        hasError = false;
+      }
+    }
+  }
 
   function loadNextSentence() {
     const mastery =
@@ -89,7 +160,7 @@
     skipPunctuationTokens();
 
     // Refocus
-    setTimeout(() => containerElement?.focus(), 50);
+    setTimeout(() => focusInput(), 50);
   }
 
   // Skip any punctuation tokens (auto-complete them)
@@ -309,21 +380,46 @@
   });
 </script>
 
+<!-- Hidden input for mobile keyboard -->
+{#if isMobile}
+  <input
+    bind:this={hiddenInputElement}
+    type="text"
+    class="fixed bottom-0 left-0 h-0 w-0 opacity-0"
+    autocomplete="off"
+    autocorrect="off"
+    autocapitalize="off"
+    spellcheck="false"
+    enterkeyhint="next"
+    oninput={handleMobileInput}
+    onkeydown={handleMobileKeyDown}
+  />
+{/if}
+
 <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={containerElement}
-  class="flex h-full flex-col p-6 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+  class="flex h-full flex-col outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+  class:p-6={!isMobile}
+  class:px-4={isMobile}
+  class:pt-12={isMobile}
+  class:pb-4={isMobile}
   tabindex="0"
   onkeydown={handleKeyDown}
+  onclick={focusInput}
   role="application"
   aria-label="Typing practice area"
 >
   <!-- Header -->
   <div class="flex items-center justify-between">
     <StreakCounter streak={session.currentStreak} />
-    <Button variant="ghost" size="sm" onclick={handleQuit}>
-      {m.practice_quit()}
-    </Button>
+    {#if isMobile}
+      <ModeToggle mobile />
+    {:else}
+      <Button variant="ghost" size="sm" onclick={handleQuit}>
+        {m.practice_quit()}
+      </Button>
+    {/if}
   </div>
 
   <!-- Main practice area -->
@@ -331,7 +427,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="flex flex-1 flex-col items-center justify-center gap-8"
-    onclick={() => containerElement?.focus()}
+    onclick={focusInput}
   >
     {#if currentSentence}
       <!-- Japanese sentence display -->

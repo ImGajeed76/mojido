@@ -17,6 +17,10 @@ project.inlang/cache/
 src-tauri/target/
 target/
 
+# Android signing (contains passwords)
+src-tauri/gen/android/key.properties
+src-tauri/gen/android/keystore/
+
 # Sentence generation temp files
 jpn_sentences.tsv
 jpn_sentences.tsv.bz2

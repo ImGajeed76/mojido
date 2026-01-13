@@ -38,7 +38,7 @@ export default defineConfig({
           help: "Start Android development",
           exec: async () => {
             await ensureAndroidEnv();
-            await liveExec("bunx tauri android dev", {
+            await liveExec("TAURI_DEV_HOST=0.0.0.0 bunx tauri android dev", {
               outputPrefix: "ANDROID",
             });
           },

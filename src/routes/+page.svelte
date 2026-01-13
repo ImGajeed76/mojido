@@ -3,6 +3,7 @@
   import PracticeView from "$lib/components/PracticeView.svelte";
   import {startSession, loadLastSession} from "$lib/stores/session.svelte";
   import {getDayStreak, hasPracticedToday} from "$lib/db";
+  import {onMount, onDestroy} from "svelte";
 
   type View = "start" | "practice";
   let currentView = $state<View>("start");
@@ -13,6 +14,21 @@
   // Load stats on mount
   $effect(() => {
     loadStats();
+  });
+
+  // Handle Android back button via history API
+  function handlePopState() {
+    if (currentView === "practice") {
+      handleQuit();
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener("popstate", handlePopState);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener("popstate", handlePopState);
   });
 
   async function loadStats() {
@@ -28,6 +44,8 @@
 
   async function handleStart() {
     await startSession();
+    // Push state so back button works
+    history.pushState({view: "practice"}, "");
     currentView = "practice";
   }
 
