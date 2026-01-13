@@ -21,7 +21,7 @@
 {#if !isMobile}
   <Titlebar />
 {/if}
-<div class="flex h-full flex-col" class:pt-8={!isMobile}>
+<div class="flex h-full flex-col overflow-hidden" class:pt-8={!isMobile}>
   {@render children()}
 </div>
 <div style="display:none">

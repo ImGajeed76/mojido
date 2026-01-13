@@ -399,7 +399,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={containerElement}
-  class="flex h-full flex-col outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+  class="flex h-full flex-col overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
   class:p-6={!isMobile}
   class:px-4={isMobile}
   class:pt-12={isMobile}
@@ -410,8 +410,8 @@
   role="application"
   aria-label="Typing practice area"
 >
-  <!-- Header -->
-  <div class="flex items-center justify-between">
+  <!-- Header - fixed height, won't shrink -->
+  <div class="flex shrink-0 items-center justify-between">
     <StreakCounter streak={session.currentStreak} />
     {#if isMobile}
       <ModeToggle mobile />
@@ -422,11 +422,12 @@
     {/if}
   </div>
 
-  <!-- Main practice area -->
+  <!-- Main practice area - fills remaining space, content centered -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="flex flex-1 flex-col items-center justify-center gap-8"
+    class="flex min-h-0 flex-1 flex-col items-center justify-center gap-6"
+    class:gap-8={!isMobile}
     onclick={focusInput}
   >
     {#if currentSentence}
@@ -463,8 +464,8 @@
     {/if}
   </div>
 
-  <!-- Session stats footer -->
-  <div class="flex justify-center gap-6 text-sm text-muted-foreground">
+  <!-- Session stats footer - fixed height, won't shrink -->
+  <div class="flex shrink-0 justify-center gap-6 text-sm text-muted-foreground">
     <span>
       {m.practice_stats_correct({
         correct: session.correctChars,
