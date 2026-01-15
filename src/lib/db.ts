@@ -604,3 +604,193 @@ export async function getCharactersDueForReview(): Promise<
     };
   });
 }
+
+// ============================================
+// Stats Page Functions
+// ============================================
+
+export interface MasteryDistribution {
+  new: number;
+  learning: number;
+  reviewing: number;
+  mastered: number;
+  total: number;
+}
+
+export async function getMasteryDistribution(): Promise<MasteryDistribution> {
+  const db = await getDb();
+  const result = await db.select<{level: string; count: number}[]>(
+    `SELECT level, COUNT(*) as count FROM progress GROUP BY level`
+  );
+
+  const distribution: MasteryDistribution = {
+    new: 0,
+    learning: 0,
+    reviewing: 0,
+    mastered: 0,
+    total: 0,
+  };
+
+  for (const row of result) {
+    if (row.level === "new") distribution.new = row.count;
+    else if (row.level === "learning") distribution.learning = row.count;
+    else if (row.level === "reviewing") distribution.reviewing = row.count;
+    else if (row.level === "mastered") distribution.mastered = row.count;
+    distribution.total += row.count;
+  }
+
+  return distribution;
+}
+
+export interface SessionSummary {
+  id: number;
+  startedAt: number;
+  endedAt: number;
+  totalChars: number;
+  correctChars: number;
+  maxStreak: number;
+  accuracy: number;
+  durationMs: number;
+}
+
+export async function getRecentSessions(
+  limit: number
+): Promise<SessionSummary[]> {
+  const db = await getDb();
+  const records = await db.select<SessionRecord[]>(
+    `SELECT * FROM sessions
+     WHERE ended_at IS NOT NULL
+     ORDER BY ended_at DESC
+     LIMIT ?`,
+    [limit]
+  );
+
+  return records.map((record) => ({
+    id: record.id,
+    startedAt: record.started_at,
+    endedAt: record.ended_at!,
+    totalChars: record.total_chars,
+    correctChars: record.correct_chars,
+    maxStreak: record.max_streak,
+    accuracy:
+      record.total_chars > 0
+        ? Math.round((record.correct_chars / record.total_chars) * 100)
+        : 0,
+    durationMs: record.ended_at! - record.started_at,
+  }));
+}
+
+export async function getTotalSessions(): Promise<number> {
+  const db = await getDb();
+  const result = await db.select<{count: number}[]>(
+    `SELECT COUNT(*) as count FROM sessions WHERE ended_at IS NOT NULL`
+  );
+  return result[0]?.count ?? 0;
+}
+
+// ============================================
+// Enhanced Stats Functions
+// ============================================
+
+/**
+ * Get overall accuracy from recent sessions
+ */
+export async function getOverallAccuracy(
+  sessionLimit: number = 10
+): Promise<number> {
+  const db = await getDb();
+  const result = await db.select<{total: number; correct: number}[]>(
+    `SELECT SUM(total_chars) as total, SUM(correct_chars) as correct
+     FROM (
+       SELECT total_chars, correct_chars FROM sessions
+       WHERE ended_at IS NOT NULL AND total_chars > 0
+       ORDER BY ended_at DESC
+       LIMIT ?
+     )`
+  , [sessionLimit]);
+
+  if (!result[0] || result[0].total === 0) return 0;
+  return Math.round((result[0].correct / result[0].total) * 100);
+}
+
+/**
+ * Get characters that need the most work (lowest accuracy, minimum attempts)
+ */
+export async function getWeakCharacters(
+  limit: number = 5,
+  minAttempts: number = 3
+): Promise<CharacterMasteryData[]> {
+  const db = await getDb();
+  const records = await db.select<ProgressRecord[]>(
+    `SELECT * FROM progress
+     WHERE (correct + incorrect) >= ?
+     ORDER BY mastery_score ASC, (correct + incorrect) DESC
+     LIMIT ?`,
+    [minAttempts, limit]
+  );
+
+  return records.map((record) => {
+    const total = record.correct + record.incorrect;
+    return {
+      character: record.character,
+      correct: record.correct,
+      incorrect: record.incorrect,
+      accuracy: total > 0 ? record.correct / total : 0,
+      avgTimeMs:
+        record.attempt_count > 0
+          ? record.total_time_ms / record.attempt_count
+          : 0,
+      hintRate:
+        record.hint_shown > 0 ? record.hint_used / record.hint_shown : 0,
+      masteryScore: record.mastery_score,
+      level: record.level,
+      lastSeen: record.last_seen,
+      nextReview: record.next_review_at,
+      recentTimes: JSON.parse(record.recent_times || "[]"),
+    };
+  });
+}
+
+/**
+ * Get average response time across all practiced characters
+ */
+export async function getAverageResponseTime(): Promise<number> {
+  const db = await getDb();
+  const result = await db.select<{total_time: number; total_attempts: number}[]>(
+    `SELECT SUM(total_time_ms) as total_time, SUM(attempt_count) as total_attempts
+     FROM progress
+     WHERE attempt_count > 0`
+  );
+
+  if (!result[0] || result[0].total_attempts === 0) return 0;
+  return Math.round(result[0].total_time / result[0].total_attempts);
+}
+
+/**
+ * Get speed baseline from user profile
+ */
+export async function getSpeedBaseline(): Promise<number> {
+  const profile = await getUserProfile();
+  return profile.speed_baseline_ms;
+}
+
+/**
+ * Get characters sorted by accuracy for the mastery grid
+ * Returns accuracy value (0-1) for each practiced character
+ */
+export async function getCharacterAccuracyMap(): Promise<Map<string, number>> {
+  const db = await getDb();
+  const records = await db.select<{character: string; correct: number; incorrect: number}[]>(
+    `SELECT character, correct, incorrect FROM progress`
+  );
+
+  const map = new Map<string, number>();
+  for (const record of records) {
+    const total = record.correct + record.incorrect;
+    if (total > 0) {
+      map.set(record.character, record.correct / total);
+    }
+  }
+
+  return map;
+}

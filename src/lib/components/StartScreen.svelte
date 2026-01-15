@@ -1,26 +1,19 @@
 <script lang="ts">
   import {m} from "$lib/paraglide/messages.js";
   import {Button} from "$lib/components/ui/button";
+  import BarChart3 from "@lucide/svelte/icons/bar-chart-3";
   import DayStreakDisplay from "./DayStreakDisplay.svelte";
   import ModeToggle from "./ModeToggle.svelte";
   import {getIsMobile} from "$lib/stores/platform.svelte";
 
   interface Props {
     onStart: () => void;
+    onViewStats: () => void;
     dayStreak?: number;
     practicedToday?: boolean;
-    lastSession?: {
-      accuracy: number;
-      maxStreak: number;
-    } | null;
   }
 
-  let {
-    onStart,
-    dayStreak = 0,
-    practicedToday = false,
-    lastSession = null,
-  }: Props = $props();
+  let {onStart, onViewStats, dayStreak = 0, practicedToday = false}: Props = $props();
 
   const isMobile = $derived(getIsMobile());
 </script>
@@ -51,20 +44,20 @@
       {m.start_description()}
     </p>
 
-    {#if lastSession}
-      <div class="flex flex-col items-center gap-2">
-        <span class="text-muted-foreground text-xs font-medium">
-          {m.start_stats_lastSession()}
-        </span>
-        <div class="flex gap-4 text-sm font-medium text-muted-foreground">
-          <span>{m.start_stats_accuracy({accuracy: lastSession.accuracy})}</span>
-          <span>{m.start_stats_streak({streak: lastSession.maxStreak})}</span>
-        </div>
-      </div>
-    {/if}
-
-    <Button variant="default" size="lg" class="h-11 px-8" onclick={onStart}>
-      {m.start_button_primary()}
-    </Button>
+    <!-- Action buttons: Start (wide) + Stats (square) -->
+    <div class="flex items-center gap-2">
+      <Button variant="default" size="lg" class="h-11 px-8" onclick={onStart}>
+        {m.start_button_primary()}
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        class="h-11 w-11"
+        onclick={onViewStats}
+        aria-label={m.stats_page_title()}
+      >
+        <BarChart3 class="h-5 w-5" />
+      </Button>
+    </div>
   </div>
 </div>

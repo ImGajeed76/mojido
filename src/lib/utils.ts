@@ -9,3 +9,6 @@ export function cn(...inputs: ClassValue[]) {
 export type WithElementRef<T, E extends HTMLElement = HTMLElement> = T & {
   ref?: E | null;
 };
+
+// Type helper to exclude children prop
+export type WithoutChildren<T> = T extends {children?: infer _} ? Omit<T, "children"> : T;

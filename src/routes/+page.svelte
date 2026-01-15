@@ -1,25 +1,27 @@
 <script lang="ts">
   import StartScreen from "$lib/components/StartScreen.svelte";
   import PracticeView from "$lib/components/PracticeView.svelte";
-  import {startSession, loadLastSession} from "$lib/stores/session.svelte";
+  import StatsView from "$lib/components/StatsView.svelte";
+  import {startSession} from "$lib/stores/session.svelte";
   import {getDayStreak, hasPracticedToday, initUserProfile} from "$lib/db";
   import {onMount, onDestroy} from "svelte";
 
-  type View = "start" | "practice";
+  type View = "start" | "practice" | "stats";
   let currentView = $state<View>("start");
-  let lastSession = $state<{accuracy: number; maxStreak: number} | null>(null);
   let dayStreak = $state(0);
   let practicedToday = $state(false);
 
-  // Load stats on mount
+  // Load streak on mount
   $effect(() => {
-    loadStats();
+    loadStreak();
   });
 
   // Handle Android back button via history API
   function handlePopState() {
     if (currentView === "practice") {
       handleQuit();
+    } else if (currentView === "stats") {
+      handleStatsBack();
     }
   }
 
@@ -31,13 +33,11 @@
     window.removeEventListener("popstate", handlePopState);
   });
 
-  async function loadStats() {
-    const [session, streak, practiced] = await Promise.all([
-      loadLastSession(),
+  async function loadStreak() {
+    const [streak, practiced] = await Promise.all([
       getDayStreak(),
       hasPracticedToday(),
     ]);
-    lastSession = session;
     dayStreak = streak;
     practicedToday = practiced;
   }
@@ -52,14 +52,24 @@
   }
 
   async function handleQuit() {
-    // Reload all stats
-    await loadStats();
+    await loadStreak();
+    currentView = "start";
+  }
+
+  function handleViewStats() {
+    history.pushState({view: "stats"}, "");
+    currentView = "stats";
+  }
+
+  function handleStatsBack() {
     currentView = "start";
   }
 </script>
 
 {#if currentView === "start"}
-  <StartScreen onStart={handleStart} {lastSession} {dayStreak} {practicedToday} />
+  <StartScreen onStart={handleStart} onViewStats={handleViewStats} {dayStreak} {practicedToday} />
 {:else if currentView === "practice"}
   <PracticeView onQuit={handleQuit} />
+{:else if currentView === "stats"}
+  <StatsView onBack={handleStatsBack} />
 {/if}
