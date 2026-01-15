@@ -23,6 +23,9 @@
   "practice_tap_to_type": "Tap here to type",
   "practice_stats_correct": "{correct}/{total} correct",
   "practice_stats_best_streak": "Best streak: {streak}",
+  "practice_hint_label": "hint:",
+  "practice_continue_space": "Press {key} to continue",
+  "practice_continue_tap": "Tap to continue",
 
   "feedback_correct": "Correct!",
   "feedback_incorrect": "Try again",

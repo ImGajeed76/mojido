@@ -6,15 +6,31 @@
   import StreakCounter from "./StreakCounter.svelte";
   import StreakCelebration from "./StreakCelebration.svelte";
   import ModeToggle from "./ModeToggle.svelte";
-  import {type Sentence, selectSentence} from "$lib/data/sentences";
+  import {type Sentence, sentences} from "$lib/data/sentences";
+  import {generatedSentences} from "$lib/data/sentences-generated";
   import {tokenize, matchRomaji, isPunctuation, type Token} from "$lib/utils/romaji";
   import {
     getSessionState,
-    recordAttempt,
+    recordAttemptWithTiming,
     endSession,
+    setSentenceStart,
+    setTokenStart,
+    markHintUsed,
+    completeSentence,
+    prepareTokenStart,
   } from "$lib/stores/session.svelte";
-  import {recordSentenceCompleted, getDayStreak} from "$lib/db";
+  import {
+    recordSentenceCompleted,
+    getDayStreak,
+    getUserProfile,
+    getAllCharacterMastery,
+    getRecentSentenceIds,
+  } from "$lib/db";
   import {getIsMobile} from "$lib/stores/platform.svelte";
+  import {
+    selectNextSentence,
+    calculateSentenceDifficulty,
+  } from "$lib/utils/adaptive";
 
   interface Props {
     onQuit: () => void;
@@ -28,7 +44,6 @@
 
   // Sentence state
   let currentSentence = $state<Sentence | null>(null);
-  let recentSentenceIds = $state<string[]>([]);
 
   // Token-based tracking
   let currentTokenIndex = $state(0);
@@ -46,6 +61,14 @@
 
   // Hint state - only one hint open at a time
   let openHintIndex = $state<number | null>(null);
+
+  // Romaji hint after consecutive errors
+  let consecutiveErrors = $state(0);
+  const ERROR_THRESHOLD_FOR_HINT = 3; // Show hint after 3 errors
+  let showRomajiHint = $derived(consecutiveErrors >= ERROR_THRESHOLD_FOR_HINT);
+
+  // Sentence complete - waiting for space to continue
+  let awaitingNextSentence = $state(false);
 
   // Day streak celebration
   let showCelebration = $state(false);
@@ -71,6 +94,11 @@
   });
 
   function focusInput() {
+    // On mobile, tapping when awaiting continues to next sentence
+    if (awaitingNextSentence && isMobile) {
+      loadNextSentence();
+      return;
+    }
     if (isMobile && hiddenInputElement) {
       hiddenInputElement.focus();
     } else if (containerElement) {
@@ -79,9 +107,16 @@
   }
 
   // Handle mobile text input
-  function handleMobileInput(e: Event) {
+  async function handleMobileInput(e: Event) {
     const input = e.target as HTMLInputElement;
     const value = input.value;
+
+    // Any input when awaiting continues to next sentence
+    if (awaitingNextSentence) {
+      input.value = "";
+      loadNextSentence();
+      return;
+    }
 
     if (value.length === 0) {
       // Backspace was pressed
@@ -99,6 +134,9 @@
     // Block input if there's an error
     if (hasError) return;
 
+    // Start timing on first keystroke
+    setTokenStart();
+
     const newInput = inputBuffer + typed;
 
     // Get current kana tokens
@@ -110,8 +148,9 @@
 
     if (result.matched) {
       inputBuffer = newInput;
+      consecutiveErrors = 0; // Reset error counter on success
       const token = currentSentence!.tokens[currentTokenIndex];
-      recordAttempt(token.reading, true);
+      await recordAttemptWithTiming(token.reading, true);
       advanceToNext(newInput);
     } else if (result.partial) {
       inputBuffer = newInput;
@@ -119,8 +158,9 @@
       inputBuffer = newInput;
       hasError = true;
       currentTokenHadError = true;
+      consecutiveErrors++; // Track consecutive errors for hint
       const token = currentSentence!.tokens[currentTokenIndex];
-      recordAttempt(token.reading, false);
+      await recordAttemptWithTiming(token.reading, false);
     }
   }
 
@@ -134,14 +174,29 @@
     }
   }
 
-  function loadNextSentence() {
-    const mastery =
-      session.totalChars > 0 ? session.correctChars / session.totalChars : 0;
-    const sentence = selectSentence(mastery, recentSentenceIds);
+  async function loadNextSentence() {
+    // Get user profile and mastery data for adaptive selection
+    const profile = await getUserProfile();
+    const masteryMap = await getAllCharacterMastery();
+    const recentIds = await getRecentSentenceIds(15);
+
+    // Combine all sentences
+    const allSentences = [...sentences, ...generatedSentences];
+
+    // Select sentence using adaptive algorithm
+    const sentence = selectNextSentence(
+      profile,
+      allSentences,
+      masteryMap,
+      recentIds
+    );
     currentSentence = sentence;
 
-    // Track recent to avoid repetition
-    recentSentenceIds = [...recentSentenceIds.slice(-5), sentence.id];
+    // Calculate difficulty for this sentence
+    const difficulty = calculateSentenceDifficulty(sentence, masteryMap);
+
+    // Start timing for this sentence
+    await setSentenceStart(sentence.id, difficulty);
 
     // Build romaji tokens for each sentence token
     tokenRomajiList = sentence.tokens.map((token) => tokenize(token.reading));
@@ -154,10 +209,15 @@
     completedTokens = [];
     tokenStatuses = [];
     currentTokenHadError = false;
+    consecutiveErrors = 0; // Reset error counter for hint
     openHintIndex = null; // Close any open hint on new sentence
+    awaitingNextSentence = false;
 
     // Skip initial punctuation tokens
     skipPunctuationTokens();
+
+    // Prepare for first token timing
+    prepareTokenStart();
 
     // Refocus
     setTimeout(() => focusInput(), 50);
@@ -187,10 +247,14 @@
       openHintIndex = null; // Close if same hint clicked
     } else {
       openHintIndex = index; // Open new hint, closes previous
+      // Track hint usage for the current token being practiced
+      if (index === currentTokenIndex) {
+        markHintUsed();
+      }
     }
   }
 
-  function handleKeyDown(e: KeyboardEvent) {
+  async function handleKeyDown(e: KeyboardEvent) {
     // Ignore modifier keys and special keys
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "Escape") {
@@ -198,6 +262,15 @@
       return;
     }
     if (e.key === "Tab" || e.key === "Shift" || e.key === "Control") return;
+
+    // Handle space to continue after sentence complete
+    if (awaitingNextSentence) {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        loadNextSentence();
+      }
+      return;
+    }
 
     // Handle backspace
     if (e.key === "Backspace") {
@@ -219,6 +292,9 @@
     if (e.key.length !== 1) return;
     e.preventDefault();
 
+    // Start timing on first keystroke
+    setTokenStart();
+
     const typed = e.key.toLowerCase();
     const newInput = inputBuffer + typed;
 
@@ -232,10 +308,11 @@
     if (result.matched) {
       // Complete match for this kana - move to next
       inputBuffer = newInput;
+      consecutiveErrors = 0; // Reset error counter on success
 
-      // Record attempt
+      // Record attempt with timing
       const token = currentSentence!.tokens[currentTokenIndex];
-      recordAttempt(token.reading, true);
+      await recordAttemptWithTiming(token.reading, true);
 
       // Move to next kana or token
       advanceToNext(newInput);
@@ -247,10 +324,11 @@
       inputBuffer = newInput;
       hasError = true;
       currentTokenHadError = true;
+      consecutiveErrors++; // Track consecutive errors for hint
 
-      // Record failed attempt
+      // Record failed attempt with timing
       const token = currentSentence!.tokens[currentTokenIndex];
-      recordAttempt(token.reading, false);
+      await recordAttemptWithTiming(token.reading, false);
     }
   }
 
@@ -313,6 +391,9 @@
   }
 
   async function handleSentenceComplete() {
+    // Complete the sentence and update all mastery scores
+    await completeSentence();
+
     // Record sentence completion and check if it's first of the day
     const {isFirstToday} = await recordSentenceCompleted();
 
@@ -321,10 +402,8 @@
       celebrationStreak = await getDayStreak();
       showCelebration = true;
     } else {
-      // Normal flow - load next sentence after brief delay
-      setTimeout(() => {
-        loadNextSentence();
-      }, 600);
+      // Wait for user to press space before continuing
+      awaitingNextSentence = true;
     }
   }
 
@@ -378,6 +457,41 @@
     display += inputBuffer;
     return display;
   });
+
+  // Expected romaji for hint (shown after consecutive errors)
+  const expectedRomaji = $derived.by(() => {
+    const kanaTokens = getCurrentKanaTokens();
+    if (kanaTokens.length === 0 || currentKanaIndex >= kanaTokens.length) return "";
+    const currentKana = kanaTokens[currentKanaIndex];
+
+    // For small tsu (っ), show what consonant to double
+    if (currentKana?.isSmallTsu) {
+      // First try: next kana in same token
+      if (currentKanaIndex + 1 < kanaTokens.length) {
+        const nextKana = kanaTokens[currentKanaIndex + 1];
+        const nextRomaji = nextKana?.romaji[0] || "";
+        if (nextRomaji.length > 0) {
+          return nextRomaji[0]; // Just the consonant to double
+        }
+      }
+      // Second try: first kana of next sentence token
+      if (currentTokenIndex + 1 < tokenRomajiList.length) {
+        const nextTokenKanas = tokenRomajiList[currentTokenIndex + 1];
+        if (nextTokenKanas && nextTokenKanas.length > 0) {
+          const nextKana = nextTokenKanas[0];
+          const nextRomaji = nextKana?.romaji[0] || "";
+          if (nextRomaji.length > 0) {
+            return nextRomaji[0]; // Just the consonant to double
+          }
+        }
+      }
+      // Fallback for small tsu at very end: show xtu
+      return "xtu";
+    }
+
+    // Show the first (most common) romaji option
+    return currentKana?.romaji[0] || currentKana?.kana || "";
+  });
 </script>
 
 <!-- Hidden input for mobile keyboard -->
@@ -399,7 +513,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={containerElement}
-  class="flex h-full flex-col overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+  class="flex h-full flex-col overflow-hidden outline-none"
   class:p-6={!isMobile}
   class:px-4={isMobile}
   class:pt-12={isMobile}
@@ -446,6 +560,28 @@
         currentInput={currentDisplayInput}
         {hasError}
       />
+
+      <!-- Romaji hint after consecutive errors -->
+      {#if showRomajiHint && expectedRomaji && !awaitingNextSentence}
+        <div class="flex items-center gap-2 text-sm text-muted-foreground animate-in fade-in duration-200">
+          <span class="text-xs uppercase tracking-wide opacity-60">{m.practice_hint_label()}</span>
+          <span class="font-mono text-base text-muted-foreground">{expectedRomaji}</span>
+        </div>
+      {/if}
+
+      <!-- Press space to continue prompt -->
+      {#if awaitingNextSentence}
+        <div class="text-sm text-muted-foreground animate-in fade-in duration-200">
+          {#if isMobile}
+            <span class="opacity-70">{m.practice_continue_tap()}</span>
+          {:else}
+            {@const parts = m.practice_continue_space({key: "SPLIT"}).split("SPLIT")}
+            <span class="opacity-70">{parts[0]}</span>
+            <kbd class="mx-1 rounded border border-border bg-muted px-2 py-0.5 font-mono text-xs">space</kbd>
+            <span class="opacity-70">{parts[1]}</span>
+          {/if}
+        </div>
+      {/if}
 
       <!-- Progress bar with organic easing -->
       <div class="h-1 w-full max-w-md overflow-hidden rounded-full bg-muted">

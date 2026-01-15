@@ -265,26 +265,6 @@ export const sentences: Sentence[] = [
   },
 ];
 
-// Get a sentence appropriate for the user's current level
-export function selectSentence(
-  mastery: number, // 0-1, user's overall mastery
-  recentIds: string[] = [] // IDs to avoid repeating
-): Sentence {
-  // Target difficulty based on mastery
-  const targetDifficulty = 1 + mastery * 4; // 1-5 range
-
-  // Filter out recent sentences
-  const available = sentences.filter((s) => !recentIds.includes(s.id));
-  if (available.length === 0) return sentences[0];
-
-  // Sort by how close to target difficulty
-  const sorted = [...available].sort(
-    (a, b) =>
-      Math.abs(a.difficulty - targetDifficulty) -
-      Math.abs(b.difficulty - targetDifficulty)
-  );
-
-  // Pick from top 3 closest matches randomly
-  const top = sorted.slice(0, Math.min(3, sorted.length));
-  return top[Math.floor(Math.random() * top.length)];
-}
+// Note: The adaptive sentence selection is now handled by
+// selectNextSentence() in $lib/utils/adaptive.ts
+// This file only exports the sentence data.

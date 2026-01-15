@@ -2,7 +2,7 @@
   import StartScreen from "$lib/components/StartScreen.svelte";
   import PracticeView from "$lib/components/PracticeView.svelte";
   import {startSession, loadLastSession} from "$lib/stores/session.svelte";
-  import {getDayStreak, hasPracticedToday} from "$lib/db";
+  import {getDayStreak, hasPracticedToday, initUserProfile} from "$lib/db";
   import {onMount, onDestroy} from "svelte";
 
   type View = "start" | "practice";
@@ -43,6 +43,8 @@
   }
 
   async function handleStart() {
+    // Ensure user profile exists for adaptive learning
+    await initUserProfile();
     await startSession();
     // Push state so back button works
     history.pushState({view: "practice"}, "");
