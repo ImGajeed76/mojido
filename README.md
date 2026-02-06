@@ -92,3 +92,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - Tatoeba contributors for the sentence corpus
 - The Kuroshiro project for Japanese text processing
+
+---
+Built with ❤️ by [Oliver Seifert](https://oseifert.ch)
